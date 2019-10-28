@@ -32,6 +32,8 @@ pkg_search_module(OPENCV REQUIRED opencv)
 include_directories(${OPENCV_INCLUDE_DIRS})
 link_directories(${OPENCV_LIBRARY_DIRS})
 
+include_directories(include)
 
-add_executable(TEST main.cpp)
+
+add_executable(TEST main.cpp include/stream.h src/stream.cpp include/NVStream.h)
 target_link_libraries(TEST    ${OPENCV_LIBRARIES} ${AVCODEC_LIBRARIES}  ${AVFORMAT_LIBRARIES} ${AVDEVICE_LIBRARIES} ${AVFILTER_LIBRARIES} ${AVUTIL_LIBRARIES} ${SWRESAMPLE_LIBRARIES} ${SWSCALE_LIBRARIES} )
