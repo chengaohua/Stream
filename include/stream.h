@@ -7,7 +7,13 @@
 
 #include <string>
 #include <opencv2/opencv.hpp>
+
 namespace stream {
+
+    unsigned long get_tick_count();
+    int interrupt(void *ctx);
+
+
     class Base {
     public:
 
@@ -19,7 +25,13 @@ namespace stream {
 
         virtual int closeStream() = 0;
 
-        virtual ~Base() = 0; ;
+        virtual ~Base() = 0;
+
+        unsigned long GetLastTickCount() ;
+
+
+    protected:
+        unsigned long       lastTickCount_;
 
     };
 
