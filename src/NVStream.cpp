@@ -2,7 +2,10 @@
 // Created by gh on 11/4/19.
 //
 
+extern "C" {
 #include <libavutil/imgutils.h>
+}
+
 #include "NVStream.h"
 
 namespace stream {
@@ -216,5 +219,18 @@ namespace stream {
         av_packet_unref(&packet_);
     }
 
+
+
+    int NVStream::closeStream() {
+        return 0;
+    }
+
+    int NVStream::openFile(std::string file) {
+        return 0;
+    }
+
+    int NVStream::openCam(int id) {
+        return 0;
+    }
 
 }

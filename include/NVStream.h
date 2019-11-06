@@ -33,6 +33,8 @@ namespace stream{
 
         virtual int closeStream() override;
 
+        ~NVStream() = default;
+
     private:
 
         AVFormatContext * input_ctx_;

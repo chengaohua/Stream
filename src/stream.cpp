@@ -15,31 +15,29 @@ extern "C" {
 }
 
 
-
 #include "stream.h"
 
-unsigned long get_tick_count(){
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return (ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
-}
-
- int interrupt(void *ctx){
-    if (ctx == nullptr) {
-        return AVERROR_EOF;
-    }
-
-    auto now =  get_tick_count();
-    stream::Base* pStream = (stream::Base*)ctx;
-    if (now - pStream->GetLastTickCount() > 30 * 1000) {
-        std::cout << "av_frame interrupt"<<std::endl;
-        return AVERROR_EOF;
-    }
-    return 0;
-}
-
-
 namespace stream{
+
+    unsigned long get_tick_count(){
+        struct timespec ts;
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        return (ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
+    }
+
+    int interrupt(void *ctx){
+        if (ctx == nullptr) {
+            return AVERROR_EOF;
+        }
+
+        auto now =  get_tick_count();
+        stream::Base* pStream = (stream::Base*)ctx;
+        if (now - pStream->GetLastTickCount() > 30 * 1000) {
+            std::cout << "av_frame interrupt"<<std::endl;
+            return AVERROR_EOF;
+        }
+        return 0;
+    }
 
     int Base::openCam(int id) {
         return -1;
@@ -57,5 +55,9 @@ namespace stream{
     unsigned long Base::GetLastTickCount(){
         return lastTickCount_;
     }
+
+//    Base::~Base() {
+//
+//    }
 
 }

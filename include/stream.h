@@ -25,7 +25,7 @@ namespace stream {
 
         virtual int closeStream() = 0;
 
-        virtual ~Base() = 0;
+        virtual ~Base() = default;
 
         unsigned long GetLastTickCount() ;
 
