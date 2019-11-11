@@ -8,6 +8,22 @@ extern "C" {
 
 #include "NVStream.h"
 
+//static enum AVPixelFormat hw_pix_fmt;
+
+//static enum AVPixelFormat get_hw_format(AVCodecContext *ctx,
+//                                        const enum AVPixelFormat *pix_fmts)
+//{
+//    const enum AVPixelFormat *p;
+//
+//    for (p = pix_fmts; *p != -1; p++) {
+//        if (*p == hw_pix_fmt)
+//            return *p;
+//    }
+//
+//    fprintf(stderr, "Failed to get HW surface format.\n");
+//    return AV_PIX_FMT_NONE;
+//}
+
 namespace stream {
     int NVStream::openRtsp(std::string url) {
         if (url.size() <= 7) {
@@ -16,9 +32,9 @@ namespace stream {
         }
 
         input_ctx_ = avformat_alloc_context();
-        input_ctx_->interrupt_callback.callback = interrupt;
-        input_ctx_->interrupt_callback.opaque = this;
-        lastTickCount_ = get_tick_count();
+//        input_ctx_->interrupt_callback.callback = interrupt;
+//        input_ctx_->interrupt_callback.opaque = this;
+//        lastTickCount_ = get_tick_count();
 
         AVDictionary *options = nullptr;
         av_dict_set(&options, "buffer_size", "10485760", 0);
@@ -28,8 +44,8 @@ namespace stream {
         av_dict_set(&options, "stimeout", "2000000", 0);
 
 
-        AVInputFormat *avfmt = nullptr;
-        if (int errCode = avformat_open_input(&input_ctx_, url.c_str(), avfmt, &options) != 0) {
+        //AVInputFormat *avfmt = nullptr;
+        if (int errCode = avformat_open_input(&input_ctx_, url.c_str(), nullptr, &options) != 0) {
 
             av_dict_free(&options);
             avformat_free_context(input_ctx_);
@@ -66,7 +82,7 @@ namespace stream {
             }
             if (config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX &&
                 config->device_type == type) {
-                printf("pix_fmt = %d\n", config->pix_fmt);
+              //  printf("pix_fmt = %d\n", config->pix_fmt);
                 hw_pix_fmt_ = config->pix_fmt;
                 break;
             }
@@ -79,6 +95,8 @@ namespace stream {
         if (avcodec_parameters_to_context(decoder_ctx_, av_stream_->codecpar) < 0)
             return -1;
 
+       // hw_pix_fmt = hw_pix_fmt_;
+        //decoder_ctx_->get_format = get_hw_format;
         decoder_ctx_->pix_fmt = hw_pix_fmt_;
 
         if ((ret = av_hwdevice_ctx_create(&hw_device_ctx_, type,
@@ -94,55 +112,56 @@ namespace stream {
         }
 
 
+        std::cout<<"open rtsp success!"<<std::endl;
         return 0;
     }
 
+
     int NVStream::getFrame(cv::Mat &frame) {
 
-        bool valid = false;
+        double start = cv::getTickCount();
+        int ret;
+        if (( ret = av_read_frame(input_ctx_, &packet_)) < 0)
+            return -1;
 
-        const int max_number_of_attempts = 1 << 9;
+        if (video_stream_ == packet_.stream_index)
+            ret = decode_write(decoder_ctx_, &packet_);
 
-        while (!valid) {
-            double start = cv::getTickCount();
-            int ret = 0;
-            if ((ret = av_read_frame(input_ctx_, &packet_)) < 0)
-                break;
-
-            if (video_stream_ != packet_.stream_index) {
-                return -1;
-            }
-            AVFrame *frame = NULL, *sw_frame = NULL;
-            AVFrame *tmp_frame = NULL;
-            uint8_t *buffer = NULL;
-            int size;
+        av_packet_unref(&packet_);
 
 
-            ret = avcodec_send_packet(decoder_ctx_, &packet_);
-            if (ret < 0) {
-                fprintf(stderr, "Error during decoding\n");
-                return ret;
-            }
+    }
 
 
+     int NVStream::decode_write(AVCodecContext *avctx, AVPacket *packet)
+    {
+        AVFrame *frame = NULL, *sw_frame = NULL;
+        AVFrame *tmp_frame = NULL;
+        uint8_t *buffer = NULL;
+        int size;
+        int ret = 0;
+
+        ret = avcodec_send_packet(avctx, packet);
+        if (ret < 0) {
+            fprintf(stderr, "Error during decoding\n");
+            return ret;
+        }
+
+        while (1) {
             if (!(frame = av_frame_alloc()) || !(sw_frame = av_frame_alloc())) {
                 fprintf(stderr, "Can not alloc frame\n");
                 ret = AVERROR(ENOMEM);
-                av_frame_free(&frame);
-                av_frame_free(&sw_frame);
-                av_freep(&buffer);
+                goto fail;
             }
 
-            ret = avcodec_receive_frame(decoder_ctx_, frame);
+            ret = avcodec_receive_frame(avctx, frame);
             if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
                 av_frame_free(&frame);
                 av_frame_free(&sw_frame);
                 return 0;
             } else if (ret < 0) {
                 fprintf(stderr, "Error while decoding\n");
-                av_frame_free(&frame);
-                av_frame_free(&sw_frame);
-                av_freep(&buffer);
+                goto fail;
             }
 
             if (frame->format == hw_pix_fmt_) {
@@ -150,14 +169,13 @@ namespace stream {
                 /* retrieve data from GPU to CPU */
                 if ((ret = av_hwframe_transfer_data(sw_frame, frame, 0)) < 0) {
                     fprintf(stderr, "Error transferring the data to system memory\n");
-                    av_frame_free(&frame);
-                    av_frame_free(&sw_frame);
-                    av_freep(&buffer);
+                    goto fail;
                 }
                 tmp_frame = sw_frame;
             } else
                 tmp_frame = frame;
 
+            std::cout<<tmp_frame->format<<std::endl;
             size = av_image_get_buffer_size(tmp_frame->format, tmp_frame->width,
                                             tmp_frame->height, 1);
 
@@ -166,19 +184,15 @@ namespace stream {
             if (!buffer) {
                 fprintf(stderr, "Can not alloc buffer\n");
                 ret = AVERROR(ENOMEM);
-                av_frame_free(&frame);
-                av_frame_free(&sw_frame);
-                av_freep(&buffer);
+                goto fail;
             }
             ret = av_image_copy_to_buffer(buffer, size,
-                                          (const uint8_t *const *) tmp_frame->data,
-                                          (const int *) tmp_frame->linesize, tmp_frame->format,
+                                          (const uint8_t * const *)tmp_frame->data,
+                                          (const int *)tmp_frame->linesize, tmp_frame->format,
                                           tmp_frame->width, tmp_frame->height, 1);
             if (ret < 0) {
                 fprintf(stderr, "Can not copy image to buffer\n");
-                av_frame_free(&frame);
-                av_frame_free(&sw_frame);
-                av_freep(&buffer);
+                goto fail;
             }
 
             uint8_t *dst_data[4];
@@ -187,37 +201,39 @@ namespace stream {
             if (av_image_alloc(dst_data, dst_linesize, tmp_frame->width,
                                tmp_frame->height, AV_PIX_FMT_BGR24, 1) < 0) {
                 // std::cout<<"av_image_alloc error !"<<std::endl;
-                av_frame_free(&frame);
-                av_frame_free(&sw_frame);
-                av_freep(&buffer);
+                goto fail;
             }
 
-
+            double start = cv::getTickCount();
             m_swsContext_ = sws_getCachedContext(m_swsContext_,
-                                                 tmp_frame->width, tmp_frame->height,
-                                                 tmp_frame->format,
-                                                 tmp_frame->width, tmp_frame->height,
-                                                 AV_PIX_FMT_BGR24, SWS_POINT,
-                                                 NULL, NULL, NULL);
+                                                tmp_frame->width, tmp_frame->height,
+                                                tmp_frame->format,
+                                                tmp_frame->width, tmp_frame->height,
+                                                AV_PIX_FMT_BGR24, SWS_POINT,
+                                                NULL, NULL, NULL);
 
             sws_scale(m_swsContext_, tmp_frame->data, tmp_frame->linesize,
                       0, tmp_frame->height, dst_data, dst_linesize);
 
             double end = cv::getTickCount();
-            std::cout << "sws_scale run time = " << (end - start) / cv::getTickFrequency() * 1000 << " ms"
-                      << std::endl;
+            std::cout<<"sws_scale run time = "<<(end-start)/cv::getTickFrequency() * 1000<<" ms"<<std::endl;
 
             cv::Mat tmp(tmp_frame->height, tmp_frame->width, CV_8UC3, (char *) dst_data[0]);
 
-            cv::imshow("test", tmp);
+            cv::imshow("test",tmp);
             cv::waitKey(1);
             av_free(dst_data[0]);
 
 
+            fail:
+            av_frame_free(&frame);
+            av_frame_free(&sw_frame);
+            av_freep(&buffer);
+            if (ret < 0)
+                return ret;
         }
-
-        av_packet_unref(&packet_);
     }
+
 
 
 

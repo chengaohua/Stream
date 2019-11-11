@@ -7,8 +7,12 @@ int main(int argc, char ** argv) {
     while (true) {
         cv::Mat frame;
         stream->getFrame(frame);
-        cv::imshow("frame", frame);
-        cv::waitKey(1);
+
+//        if(!frame.empty()) {
+//            cv::imshow("frame", frame);
+//            cv::waitKey(1);
+//        }
+
     }
 
 
