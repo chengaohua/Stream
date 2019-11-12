@@ -35,7 +35,7 @@ namespace stream{
 
         ~NVStream() = default;
 
-        int decode_write(AVCodecContext *avctx, AVPacket *packet);
+        int decode_packet(AVCodecContext *avctx, AVPacket *packet);
 
     private:
 
